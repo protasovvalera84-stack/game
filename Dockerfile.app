@@ -43,6 +43,7 @@ FROM node:20-slim AS runtime
 ENV NODE_ENV=production \
     SERVER_PORT=4000 \
     GAMES_DIR=/data/games \
+    WEB_UI_DIST=/app/web-ui/dist \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false
 
