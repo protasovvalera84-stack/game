@@ -2,8 +2,9 @@
  * Generation runner — spawns the OpenGame CLI (opengame) as a child process,
  * captures stdout/stderr line-by-line, and calls the provided callbacks.
  *
- * Environment variables forwarded to the child:
- *   OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, and all OPENGAME_* vars.
+ * Per-request provider overrides (baseUrl, apiKey, imageProvider, …) are
+ * injected as environment variables so the CLI picks them up automatically.
+ * Server-level env vars serve as fallback defaults.
  */
 
 import { spawn } from 'node:child_process';
@@ -15,7 +16,14 @@ export interface GenerateOptions {
   prompt: string;
   gameDir: string;
   model?: string;
+  /** OpenAI-compatible base URL, e.g. http://localhost:11434/v1 */
+  baseUrl?: string;
+  /** API key — forwarded only to the spawned child, never logged */
+  apiKey?: string;
   imageProvider?: string;
+  imageBaseUrl?: string;
+  imageApiKey?: string;
+  imageModel?: string;
   onLog: (line: string) => void;
   onDone: (indexHtml: string) => Promise<void>;
   onError: (err: string) => Promise<void>;
@@ -31,7 +39,6 @@ async function findIndexHtml(gameDir: string): Promise<string | null> {
       return candidate;
     }
   }
-  // Recursive search (max depth 3)
   const walk = async (dir: string, depth: number): Promise<string | null> => {
     if (depth > 3) return null;
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -54,40 +61,55 @@ export async function generateGame(opts: GenerateOptions): Promise<void> {
     prompt,
     gameDir,
     model,
+    baseUrl,
+    apiKey,
     imageProvider,
+    imageBaseUrl,
+    imageApiKey,
+    imageModel,
     onLog,
     onDone,
     onError,
   } = opts;
 
-  // Build the env passed to the child process
+  // ── Build child environment ───────────────────────────────────────────────
+  // Per-request overrides take priority over server-level env vars.
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    // Override model if specified
-    ...(model ? { OPENAI_MODEL: model } : {}),
+
+    // LLM provider
+    ...(baseUrl    ? { OPENAI_BASE_URL:  baseUrl  } : {}),
+    ...(apiKey     ? { OPENAI_API_KEY:   apiKey   } : {}),
+    ...(model      ? { OPENAI_MODEL:     model    } : {}),
+
+    // Image generation
     ...(imageProvider ? { OPENGAME_IMAGE_PROVIDER: imageProvider } : {}),
-    // Non-interactive mode — use the current working dir as the output dir
+    ...(imageBaseUrl  ? { OPENGAME_IMAGE_BASE_URL:  imageBaseUrl  } : {}),
+    ...(imageApiKey   ? { OPENGAME_IMAGE_API_KEY:   imageApiKey   } : {}),
+    ...(imageModel    ? { OPENGAME_IMAGE_MODEL:      imageModel    } : {}),
+
     OPENGAME_OUTPUT_DIR: gameDir,
   };
 
-  // Resolve the opengame binary: prefer the workspace dist, fall back to PATH
   const args = [
-    // Non-interactive: single prompt, then exit
-    '--prompt',
-    prompt,
-    '--output-dir',
-    gameDir,
-    '--yes', // auto-approve all prompts
+    '--prompt', prompt,
+    '--output-dir', gameDir,
+    '--yes',
   ];
 
-  // Try to find opengame in PATH or workspace dist
-  const opengameBin = 'opengame';
+  const providerLabel = baseUrl
+    ? baseUrl.replace(/^https?:\/\//, '').replace(/\/v1\/?$/, '')
+    : (process.env.OPENAI_BASE_URL ?? 'default');
 
   onLog(`[server] Starting generation…`);
-  onLog(`[server] Output directory: ${gameDir}`);
+  onLog(`[server] Provider: ${providerLabel}`);
   onLog(`[server] Model: ${model ?? process.env.OPENAI_MODEL ?? 'default'}`);
+  onLog(`[server] Output: ${gameDir}`);
+  if (imageProvider) {
+    onLog(`[server] Image provider: ${imageProvider} (${imageModel ?? 'default model'})`);
+  }
 
-  const child = spawn(opengameBin, args, {
+  const child = spawn('opengame', args, {
     cwd: gameDir,
     env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -101,19 +123,12 @@ export async function generateGame(opts: GenerateOptions): Promise<void> {
     if (lastLines.length > 50) lastLines = lastLines.slice(-50);
   };
 
-  // Stream stdout/stderr
   child.stdout?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8');
-    for (const line of text.split('\n')) {
-      if (line.trim()) handleLine(line);
-    }
+    chunk.toString('utf8').split('\n').filter(Boolean).forEach(handleLine);
   });
 
   child.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8');
-    for (const line of text.split('\n')) {
-      if (line.trim()) handleLine(`[stderr] ${line}`);
-    }
+    chunk.toString('utf8').split('\n').filter(Boolean).forEach((l) => handleLine(`[stderr] ${l}`));
   });
 
   await new Promise<void>((resolve) => {

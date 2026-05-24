@@ -93,10 +93,24 @@ app.delete('/api/games/:id', async (req, res) => {
 
 // ── REST: start generation (SSE) ──────────────────────────────────────────
 app.post('/api/generate', async (req, res) => {
-  const { prompt, model, imageProvider } = req.body as {
+  const {
+    prompt,
+    model,
+    baseUrl,
+    apiKey,
+    imageProvider,
+    imageBaseUrl,
+    imageApiKey,
+    imageModel,
+  } = req.body as {
     prompt?: string;
     model?: string;
+    baseUrl?: string;
+    apiKey?: string;
     imageProvider?: string;
+    imageBaseUrl?: string;
+    imageApiKey?: string;
+    imageModel?: string;
   };
 
   if (!prompt?.trim()) {
@@ -107,25 +121,32 @@ app.post('/api/generate', async (req, res) => {
   const gameDir = path.join(GAMES_DIR, id);
   await fs.ensureDir(gameDir);
 
+  const resolvedBaseUrl = baseUrl || process.env.OPENAI_BASE_URL;
+  const resolvedModel   = model   || process.env.OPENAI_MODEL || 'qwen2.5-coder:7b';
+
   const record: GameRecord = {
     id,
     prompt: prompt.trim(),
     status: 'running',
     createdAt: new Date().toISOString(),
-    model: model ?? process.env.OPENAI_MODEL ?? 'qwen2.5-coder:7b',
+    model: resolvedModel,
   };
   await saveGame(GAMES_DIR, record);
 
-  // Respond immediately with the job id; client subscribes via socket.io
+  // Respond immediately; client subscribes for updates via socket.io
   res.json({ id });
 
-  // Run generation in background, emit events via socket.io room = id
   generateGame({
     id,
     prompt: prompt.trim(),
     gameDir,
-    model: record.model,
-    imageProvider: imageProvider ?? process.env.OPENGAME_IMAGE_PROVIDER,
+    model:         resolvedModel,
+    baseUrl:       resolvedBaseUrl,
+    apiKey:        apiKey || process.env.OPENAI_API_KEY,
+    imageProvider: imageProvider || process.env.OPENGAME_IMAGE_PROVIDER,
+    imageBaseUrl:  imageBaseUrl  || process.env.OPENGAME_IMAGE_BASE_URL,
+    imageApiKey:   imageApiKey   || process.env.OPENGAME_IMAGE_API_KEY,
+    imageModel:    imageModel    || process.env.OPENGAME_IMAGE_MODEL,
     onLog: (line) => io.to(id).emit('log', { id, line }),
     onDone: async (indexHtml) => {
       record.status = 'done';

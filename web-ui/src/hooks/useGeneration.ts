@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { api, type GameRecord } from '../api/client.js';
+import { api, type GameRecord, type GenerateRequest } from '../api/client.js';
 
 export type GenStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -10,6 +10,16 @@ export interface GenerationState {
   logs: string[];
   game: GameRecord | null;
   error: string | null;
+}
+
+/** Extra provider config forwarded to the backend on each generation. */
+export interface ProviderOverride {
+  baseUrl?: string;
+  apiKey?: string;
+  imageProvider?: string;
+  imageBaseUrl?: string;
+  imageApiKey?: string;
+  imageModel?: string;
 }
 
 export function useGeneration() {
@@ -23,7 +33,6 @@ export function useGeneration() {
 
   const socketRef = useRef<Socket | null>(null);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       socketRef.current?.disconnect();
@@ -31,22 +40,31 @@ export function useGeneration() {
   }, []);
 
   const start = useCallback(
-    async (prompt: string, model?: string, imageProvider?: string) => {
-      // Disconnect previous socket
+    async (
+      prompt: string,
+      model?: string,
+      _unused?: undefined,
+      override?: ProviderOverride,
+    ) => {
       socketRef.current?.disconnect();
       socketRef.current = null;
 
-      setState({
-        id: null,
-        status: 'running',
-        logs: [],
-        game: null,
-        error: null,
-      });
+      setState({ id: null, status: 'running', logs: [], game: null, error: null });
+
+      const body: GenerateRequest = {
+        prompt,
+        model,
+        baseUrl:       override?.baseUrl,
+        apiKey:        override?.apiKey,
+        imageProvider: override?.imageProvider,
+        imageBaseUrl:  override?.imageBaseUrl,
+        imageApiKey:   override?.imageApiKey,
+        imageModel:    override?.imageModel,
+      };
 
       let jobId: string;
       try {
-        const res = await api.generate({ prompt, model, imageProvider });
+        const res = await api.generate(body);
         jobId = res.id;
       } catch (err) {
         setState((prev) => ({ ...prev, status: 'error', error: String(err) }));
@@ -55,13 +73,10 @@ export function useGeneration() {
 
       setState((prev) => ({ ...prev, id: jobId }));
 
-      // Open Socket.io connection and subscribe to job room
       const socket = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
       socketRef.current = socket;
 
-      socket.on('connect', () => {
-        socket.emit('subscribe', jobId);
-      });
+      socket.on('connect', () => socket.emit('subscribe', jobId));
 
       socket.on('log', ({ line }: { line: string }) => {
         setState((prev) => ({ ...prev, logs: [...prev.logs, line] }));

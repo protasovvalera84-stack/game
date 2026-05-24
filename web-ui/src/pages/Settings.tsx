@@ -1,105 +1,422 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
+  ArrowUpRight,
   CheckCircle,
+  ChevronDown,
   CloudOff,
-  Info,
+  Gift,
+  Loader,
   Save,
-  Server,
+  TestTube,
+  Zap,
 } from 'lucide-react';
-import React, { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Page } from '../App.js';
+import {
+  CATEGORY_LABELS,
+  getDefaultModel,
+  getProvider,
+  IMAGE_PROVIDERS,
+  LLM_PROVIDERS,
+  type ProviderCategory,
+  type ProviderPreset,
+} from '../data/providers.js';
 
 interface Props {
   navigate: (p: Page) => void;
 }
 
-const MODELS = [
-  { value: 'qwen2.5-coder:7b',  label: 'Qwen2.5-Coder 7B  (fast, offline)' },
-  { value: 'qwen2.5-coder:14b', label: 'Qwen2.5-Coder 14B (better quality, needs GPU)' },
-  { value: 'codellama:7b',      label: 'CodeLlama 7B      (alternative, offline)' },
-  { value: 'gpt-4o-mini',       label: 'GPT-4o Mini       (cloud — needs API key)' },
-  { value: 'gpt-4o',            label: 'GPT-4o            (cloud — needs API key)' },
-];
+// ── Persisted config keys ─────────────────────────────────────────────────────
+const KEYS = {
+  providerId:    'og.providerId',
+  baseUrl:       'og.baseUrl',
+  apiKey:        'og.apiKey',
+  model:         'og.model',
+  imgProviderId: 'og.imgProviderId',
+  imgBaseUrl:    'og.imgBaseUrl',
+  imgApiKey:     'og.imgApiKey',
+  imgModel:      'og.imgModel',
+} as const;
 
-const IMAGE_PROVIDERS = [
-  { value: '',          label: 'None (text-only game)' },
-  { value: 'tongyi',    label: 'Tongyi / DashScope' },
-  { value: 'doubao',    label: 'Doubao / Volcengine' },
-  { value: 'openai-compat', label: 'OpenAI-compatible endpoint' },
-];
+function load(key: string, fallback = ''): string {
+  return localStorage.getItem(key) ?? fallback;
+}
 
-function Section({
-  title,
-  icon,
-  children,
+// ── Provider card ─────────────────────────────────────────────────────────────
+function ProviderCard({
+  provider,
+  selected,
+  onClick,
 }: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
+  provider: ProviderPreset;
+  selected: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="card space-y-4">
-      <div className="flex items-center gap-2 text-sm font-semibold text-white/80">
-        <span className="text-aurora-purple">{icon}</span>
-        {title}
+    <motion.button
+      layout
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      className={`
+        relative w-full text-left rounded-2xl p-4 border transition-all duration-200
+        ${selected
+          ? `${provider.bgColor} ring-2 ring-offset-2 ring-offset-surface ring-current shadow-lg`
+          : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06] hover:border-white/[0.10]'
+        }
+      `}
+    >
+      {/* Selected check */}
+      {selected && (
+        <span className="absolute top-3 right-3">
+          <CheckCircle size={14} className={provider.color} />
+        </span>
+      )}
+
+      {/* Icon + name */}
+      <div className="flex items-center gap-2.5 mb-2">
+        <span className="text-xl leading-none">{provider.emoji}</span>
+        <span className={`font-semibold text-sm ${selected ? provider.color : 'text-white/80'}`}>
+          {provider.name}
+        </span>
       </div>
-      {children}
+
+      <p className="text-[11px] text-white/40 leading-snug">{provider.tagline}</p>
+
+      {/* Free badge */}
+      {provider.freeTier && (
+        <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+          <Gift size={9} />
+          Free tier
+        </span>
+      )}
+    </motion.button>
+  );
+}
+
+// ── Category section ──────────────────────────────────────────────────────────
+function CategorySection({
+  category,
+  providers,
+  selectedId,
+  onSelect,
+}: {
+  category: ProviderCategory;
+  providers: ProviderPreset[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(
+    () => providers.some((p) => p.id === selectedId) || category === 'frontier' || category === 'local',
+  );
+
+  return (
+    <div>
+      <button
+        className="flex items-center gap-2 w-full mb-3 group"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="text-xs font-semibold uppercase tracking-widest text-white/30 group-hover:text-white/50 transition-colors">
+          {CATEGORY_LABELS[category]}
+        </span>
+        <span className="flex-1 h-px bg-white/[0.06]" />
+        <ChevronDown
+          size={13}
+          className={`text-white/20 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6 overflow-hidden"
+          >
+            {providers.map((p) => (
+              <ProviderCard
+                key={p.id}
+                provider={p}
+                selected={p.id === selectedId}
+                onClick={() => onSelect(p.id)}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
+// ── Connection tester ─────────────────────────────────────────────────────────
+type TestState = 'idle' | 'testing' | 'ok' | 'error';
+
+function useConnectionTest() {
+  const [state, setState] = useState<TestState>('idle');
+  const [message, setMessage] = useState('');
+
+  const test = useCallback(async (baseUrl: string, apiKey: string, model: string) => {
+    setState('testing');
+    setMessage('');
+    try {
+      const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Say "OK" only.' }],
+          max_tokens: 10,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
+      }
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const reply = data.choices?.[0]?.message?.content ?? '(no content)';
+      setState('ok');
+      setMessage(`✓ Connected — model replied: "${reply.slice(0, 60)}"`);
+    } catch (err: unknown) {
+      setState('error');
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  return { state, message, test };
+}
+
+// ── Model selector (with optional custom input) ───────────────────────────────
+function ModelSelect({
+  provider,
+  value,
+  onChange,
 }: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
+  provider: ProviderPreset;
+  value: string;
+  onChange: (v: string) => void;
 }) {
+  const isCustom = value === 'custom' || !provider.models.some((m) => m.id === value);
+
   return (
-    <label className="block space-y-1.5">
-      <span className="text-xs font-medium text-white/50">{label}</span>
-      {children}
-      {hint && <p className="text-[11px] text-white/25">{hint}</p>}
-    </label>
+    <div className="space-y-2">
+      <select
+        className="input-field"
+        value={isCustom ? 'custom' : value}
+        onChange={(e) => {
+          if (e.target.value === 'custom') {
+            onChange('');
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+      >
+        {provider.models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+            {m.recommended ? ' ★' : ''}
+            {m.free ? ' (free)' : ''}
+            {m.pricePer1M ? ` — $${m.pricePer1M}/1M` : ''}
+          </option>
+        ))}
+        <option value="custom">Custom model ID…</option>
+      </select>
+      <AnimatePresence>
+        {isCustom && (
+          <motion.input
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="input-field"
+            placeholder="Enter model ID, e.g. qwen2.5-coder:32b"
+            value={value === 'custom' ? '' : value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
+// ── Image provider selector ───────────────────────────────────────────────────
+function ImageSection({
+  selectedId,
+  setSelectedId,
+  apiKey,
+  setApiKey,
+  baseUrl,
+  setBaseUrl,
+  model,
+  setModel,
+}: {
+  selectedId: string;
+  setSelectedId: (v: string) => void;
+  apiKey: string;
+  setApiKey: (v: string) => void;
+  baseUrl: string;
+  setBaseUrl: (v: string) => void;
+  model: string;
+  setModel: (v: string) => void;
+}) {
+  const preset = IMAGE_PROVIDERS.find((p) => p.id === selectedId) ?? IMAGE_PROVIDERS[0]!;
+
+  return (
+    <div className="space-y-4">
+      {/* Grid of image providers */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {IMAGE_PROVIDERS.map((p) => (
+          <motion.button
+            key={p.id}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => {
+              setSelectedId(p.id);
+              setBaseUrl(p.baseUrl ?? '');
+              setModel(p.models.find((m) => m.recommended)?.id ?? p.models[0]?.id ?? '');
+            }}
+            className={`
+              rounded-xl p-3 text-left border transition-all duration-150
+              ${selectedId === p.id
+                ? `${p.bgColor} ring-1 ring-current`
+                : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
+              }
+            `}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-base">{p.emoji}</span>
+              <span className={`text-xs font-medium truncate ${selectedId === p.id ? p.color : 'text-white/70'}`}>
+                {p.name}
+              </span>
+            </div>
+            <p className="text-[10px] text-white/30 leading-tight line-clamp-2">{p.tagline}</p>
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {selectedId !== 'none' && (
+          <motion.div
+            key={selectedId}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="space-y-3"
+          >
+            {preset.baseUrl !== undefined && (
+              <div>
+                <label className="block text-xs font-medium text-white/40 mb-1.5">
+                  Image API Base URL
+                </label>
+                <input
+                  className="input-field"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={preset.baseUrl ?? ''}
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-white/40 mb-1.5">
+                Image API Key
+              </label>
+              <input
+                className="input-field"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={preset.apiKeyHint || 'Not required'}
+              />
+            </div>
+            {preset.models.length > 1 && (
+              <div>
+                <label className="block text-xs font-medium text-white/40 mb-1.5">Model</label>
+                <select
+                  className="input-field"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                >
+                  {preset.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                      {m.recommended ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Settings({ navigate }: Props) {
+  // LLM state
+  const [providerId, setProviderId] = useState(() => load(KEYS.providerId, 'ollama'));
+  const [apiKey,     setApiKey]     = useState(() => load(KEYS.apiKey));
+  const [model,      setModel]      = useState(() => load(KEYS.model));
+  const [baseUrl,    setBaseUrl]    = useState(() => load(KEYS.baseUrl));
+
+  // Image generation state
+  const [imgProviderId, setImgProviderId] = useState(() => load(KEYS.imgProviderId, 'none'));
+  const [imgApiKey,     setImgApiKey]     = useState(() => load(KEYS.imgApiKey));
+  const [imgBaseUrl,    setImgBaseUrl]    = useState(() => load(KEYS.imgBaseUrl));
+  const [imgModel,      setImgModel]      = useState(() => load(KEYS.imgModel));
+
   const [saved, setSaved] = useState(false);
+  const { state: testState, message: testMsg, test } = useConnectionTest();
 
-  // Settings stored in localStorage for the frontend; the backend reads from env vars.
-  const [baseUrl, setBaseUrl] = useState(
-    () => localStorage.getItem('og.baseUrl') ?? 'http://localhost:11434/v1',
-  );
-  const [apiKey, setApiKey] = useState(
-    () => localStorage.getItem('og.apiKey') ?? '',
-  );
-  const [model, setModel] = useState(
-    () => localStorage.getItem('og.model') ?? 'qwen2.5-coder:7b',
-  );
-  const [imageProvider, setImageProvider] = useState(
-    () => localStorage.getItem('og.imageProvider') ?? '',
-  );
-  const [imageKey, setImageKey] = useState(
-    () => localStorage.getItem('og.imageKey') ?? '',
-  );
+  // When user picks a provider preset, auto-fill baseUrl + default model
+  const selectProvider = useCallback((id: string) => {
+    setProviderId(id);
+    const preset = getProvider(id);
+    if (!preset) return;
+    setBaseUrl(preset.baseUrl);
+    const def = getDefaultModel(preset);
+    setModel(def);
+  }, []);
 
-  const save = () => {
-    localStorage.setItem('og.baseUrl', baseUrl);
-    localStorage.setItem('og.apiKey', apiKey);
-    localStorage.setItem('og.model', model);
-    localStorage.setItem('og.imageProvider', imageProvider);
-    localStorage.setItem('og.imageKey', imageKey);
+  const activeProvider = useMemo(() => getProvider(providerId), [providerId]);
+
+  // Effective base URL (user may have overridden it)
+  const effectiveBaseUrl = baseUrl || (activeProvider?.baseUrl ?? '');
+
+  // Group providers by category
+  const byCategory = useMemo(() => {
+    const order: ProviderCategory[] = ['frontier', 'fast', 'open', 'aggregator', 'local'];
+    const map = new Map<ProviderCategory, ProviderPreset[]>();
+    for (const cat of order) map.set(cat, []);
+    for (const p of LLM_PROVIDERS) {
+      map.get(p.category)?.push(p);
+    }
+    return order.map((cat) => ({ cat, providers: map.get(cat) ?? [] }));
+  }, []);
+
+  const handleSave = () => {
+    localStorage.setItem(KEYS.providerId,    providerId);
+    localStorage.setItem(KEYS.baseUrl,       effectiveBaseUrl);
+    localStorage.setItem(KEYS.apiKey,        apiKey);
+    localStorage.setItem(KEYS.model,         model);
+    localStorage.setItem(KEYS.imgProviderId, imgProviderId);
+    localStorage.setItem(KEYS.imgBaseUrl,    imgBaseUrl);
+    localStorage.setItem(KEYS.imgApiKey,     imgApiKey);
+    localStorage.setItem(KEYS.imgModel,      imgModel);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      {/* Header */}
+    <div className="max-w-3xl mx-auto space-y-8 pb-16">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3">
         <button
           className="btn-ghost py-2 px-3 flex items-center gap-1.5 text-sm"
@@ -109,118 +426,242 @@ export default function Settings({ navigate }: Props) {
           Back
         </button>
         <div className="h-5 w-px bg-white/10" />
-        <h1 className="text-xl font-bold text-white">Settings</h1>
+        <h1 className="text-xl font-bold text-white">AI Providers</h1>
       </div>
 
-      {/* Offline notice */}
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="card flex items-start gap-3 bg-aurora-purple/[0.04] border-aurora-purple/15"
-      >
-        <CloudOff size={16} className="text-aurora-purple shrink-0 mt-0.5" />
-        <div className="text-sm text-white/60 leading-relaxed">
-          <strong className="text-white">Offline mode:</strong> point the LLM
-          base URL to your local Ollama instance{' '}
-          <code className="text-aurora-cyan text-xs">
-            http://localhost:11434/v1
-          </code>{' '}
-          and leave the API key blank. Run{' '}
-          <code className="text-aurora-cyan text-xs">
-            ollama pull qwen2.5-coder:7b
-          </code>{' '}
-          first.
+      {/* ── Section: LLM ───────────────────────────────────────────────────── */}
+      <section className="card space-y-6">
+        <div>
+          <h2 className="font-bold text-white text-base">Language Model</h2>
+          <p className="text-xs text-white/40 mt-0.5">
+            Used by the agent to write game code. Pick any provider below.
+          </p>
         </div>
-      </motion.div>
 
-      {/* LLM settings */}
-      <Section title="Language Model" icon={<Server size={14} />}>
-        <Field
-          label="Base URL"
-          hint="Ollama local: http://localhost:11434/v1 · OpenAI: https://api.openai.com/v1"
-        >
-          <input
-            className="input-field"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="http://localhost:11434/v1"
-          />
-        </Field>
-        <Field label="API Key" hint="Leave blank for local Ollama.">
-          <input
-            className="input-field"
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-… or blank for Ollama"
-          />
-        </Field>
-        <Field label="Model">
-          <select
-            className="input-field"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          >
-            {MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-            <option value="custom">Custom…</option>
-          </select>
-          {model === 'custom' && (
-            <input
-              className="input-field mt-2"
-              placeholder="Enter model name"
-              onChange={(e) => setModel(e.target.value)}
-            />
+        {/* Provider grid by category */}
+        <div>
+          {byCategory.map(({ cat, providers }) =>
+            providers.length === 0 ? null : (
+              <CategorySection
+                key={cat}
+                category={cat}
+                providers={providers}
+                selectedId={providerId}
+                onSelect={selectProvider}
+              />
+            ),
           )}
-        </Field>
-      </Section>
+        </div>
 
-      {/* Image generation */}
-      <Section title="Image Generation (optional)" icon={<Info size={14} />}>
-        <Field label="Provider" hint="Leave as None for text-only games.">
-          <select
-            className="input-field"
-            value={imageProvider}
-            onChange={(e) => setImageProvider(e.target.value)}
-          >
-            {IMAGE_PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {imageProvider && (
-          <Field label="Image API Key">
-            <input
-              className="input-field"
-              type="password"
-              value={imageKey}
-              onChange={(e) => setImageKey(e.target.value)}
-              placeholder="API key for image provider"
-            />
-          </Field>
-        )}
-      </Section>
+        {/* Active provider config ────────────────────────────────────────── */}
+        <AnimatePresence mode="wait">
+          {activeProvider && (
+            <motion.div
+              key={providerId}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className={`rounded-2xl border p-5 space-y-4 ${activeProvider.bgColor}`}
+            >
+              {/* Provider header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{activeProvider.emoji}</span>
+                  <span className={`font-bold ${activeProvider.color}`}>{activeProvider.name}</span>
+                </div>
+                {activeProvider.signupUrl && (
+                  <a
+                    href={activeProvider.signupUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                  >
+                    Get API key <ArrowUpRight size={11} />
+                  </a>
+                )}
+              </div>
 
-      {/* Save */}
-      <div className="flex items-center justify-end gap-3">
-        {saved && (
-          <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center gap-1.5 text-sm text-emerald-400"
-          >
-            <CheckCircle size={14} />
-            Saved
-          </motion.span>
-        )}
-        <button className="btn-primary flex items-center gap-2 text-sm" onClick={save}>
+              {/* Offline notice for local providers */}
+              {activeProvider.category === 'local' && (
+                <div className="flex items-start gap-2 text-xs text-white/50 bg-white/[0.04] rounded-lg p-3">
+                  <CloudOff size={13} className="shrink-0 mt-0.5 text-teal-400" />
+                  <span>
+                    Runs entirely on your machine — no internet required.
+                    {activeProvider.id === 'ollama' && (
+                      <> Run <code className="text-teal-300">ollama pull {model || 'qwen2.5-coder:7b'}</code> first.</>
+                    )}
+                  </span>
+                </div>
+              )}
+
+              {/* Free tier notice */}
+              {activeProvider.freeTier && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                  <Gift size={12} />
+                  {activeProvider.freeTier}
+                </div>
+              )}
+
+              {/* Base URL (shown only for non-fixed providers) */}
+              {!activeProvider.baseUrlFixed && (
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-white/40">Base URL</span>
+                  <input
+                    className="input-field"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder={activeProvider.baseUrl}
+                  />
+                </label>
+              )}
+
+              {/* API Key */}
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-white/40">API Key</span>
+                <input
+                  className="input-field"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={activeProvider.apiKeyRequired ? activeProvider.apiKeyHint : 'Not required (local)'}
+                />
+              </label>
+
+              {/* Model */}
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-white/40">Model</span>
+                <ModelSelect
+                  provider={activeProvider}
+                  value={model || getDefaultModel(activeProvider)}
+                  onChange={setModel}
+                />
+              </label>
+
+              {/* Test connection */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  className="btn-ghost flex items-center gap-2 text-xs py-2 px-4"
+                  disabled={testState === 'testing'}
+                  onClick={() =>
+                    void test(effectiveBaseUrl, apiKey, model || getDefaultModel(activeProvider))
+                  }
+                >
+                  {testState === 'testing' ? (
+                    <Loader size={12} className="animate-spin" />
+                  ) : (
+                    <TestTube size={12} />
+                  )}
+                  {testState === 'testing' ? 'Testing…' : 'Test connection'}
+                </button>
+
+                <AnimatePresence>
+                  {testMsg && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -6 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`text-xs ${testState === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}
+                    >
+                      {testMsg}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+
+      {/* ── Section: Image Generation ───────────────────────────────────────── */}
+      <section className="card space-y-4">
+        <div>
+          <h2 className="font-bold text-white text-base">Image Generation</h2>
+          <p className="text-xs text-white/40 mt-0.5">
+            Generates sprites, backgrounds, and tilesets for your games.
+            Select <strong className="text-white/60">None</strong> for text-only games.
+          </p>
+        </div>
+        <ImageSection
+          selectedId={imgProviderId}
+          setSelectedId={setImgProviderId}
+          apiKey={imgApiKey}
+          setApiKey={setImgApiKey}
+          baseUrl={imgBaseUrl}
+          setBaseUrl={setImgBaseUrl}
+          model={imgModel}
+          setModel={setImgModel}
+        />
+      </section>
+
+      {/* ── Quick reference ─────────────────────────────────────────────────── */}
+      <section className="card bg-transparent border-dashed space-y-3">
+        <h3 className="text-xs font-semibold text-white/40 uppercase tracking-wider flex items-center gap-2">
+          <Zap size={12} className="text-aurora-purple" />
+          Recommended combos
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            {
+              title: 'Free & offline',
+              llm: 'Ollama + qwen2.5-coder:7b',
+              img: 'None',
+              note: 'Works on any PC, no internet',
+            },
+            {
+              title: 'Best quality',
+              llm: 'Claude 3.5 Sonnet (OpenRouter)',
+              img: 'fal.ai Flux',
+              note: 'Highest code + image quality',
+            },
+            {
+              title: 'Fastest & cheapest',
+              llm: 'Groq Llama 3.3 70B (free)',
+              img: 'DALL-E 3',
+              note: 'Sub-second LLM, great images',
+            },
+            {
+              title: 'Best value',
+              llm: 'DeepSeek-Coder V2',
+              img: 'fal.ai Flux Schnell',
+              note: '$0.14/M tokens, fast images',
+            },
+          ].map((c) => (
+            <div key={c.title} className="glass rounded-xl p-3 space-y-1">
+              <p className="text-xs font-semibold text-white/70">{c.title}</p>
+              <p className="text-[11px] text-white/40">
+                LLM: <span className="text-aurora-cyan">{c.llm}</span>
+              </p>
+              <p className="text-[11px] text-white/40">
+                Images: <span className="text-aurora-purple">{c.img}</span>
+              </p>
+              <p className="text-[10px] text-white/25 italic">{c.note}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Save button ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-end gap-4">
+        <AnimatePresence>
+          {saved && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-1.5 text-sm text-emerald-400"
+            >
+              <CheckCircle size={14} />
+              Saved
+            </motion.span>
+          )}
+        </AnimatePresence>
+        <button
+          className="btn-primary flex items-center gap-2"
+          onClick={handleSave}
+        >
           <Save size={14} />
-          Save Settings
+          Save settings
         </button>
       </div>
     </div>

@@ -38,7 +38,12 @@ export interface DownloadsResponse {
 export interface GenerateRequest {
   prompt: string;
   model?: string;
+  baseUrl?: string;
+  apiKey?: string;
   imageProvider?: string;
+  imageBaseUrl?: string;
+  imageApiKey?: string;
+  imageModel?: string;
 }
 
 export interface GenerateResponse {
