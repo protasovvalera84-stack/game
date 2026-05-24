@@ -47,7 +47,13 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 // ── Static: serve built web-ui (production) ────────────────────────────────
-const webUiDist = path.resolve(__dirname, '../../web-ui/dist');
+// In Docker: /app/dist/server.js → __dirname = /app/dist → ../web-ui/dist = /app/web-ui/dist
+// In dev:    packages/server/dist/server.js → ../../web-ui/dist = web-ui/dist (monorepo root)
+const webUiDist = process.env.WEB_UI_DIST
+  ? path.resolve(process.env.WEB_UI_DIST)
+  : fs.pathExistsSync(path.resolve(__dirname, '../web-ui/dist'))
+    ? path.resolve(__dirname, '../web-ui/dist')
+    : path.resolve(__dirname, '../../web-ui/dist');
 if (await fs.pathExists(webUiDist)) {
   app.use(express.static(webUiDist));
 }
