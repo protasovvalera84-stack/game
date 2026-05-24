@@ -1,59 +1,67 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # OpenGame Studio — single-image build (web-ui + backend server)
 #
-#  Stage 1: build the React web UI
-#  Stage 2: build the Node.js backend server
-#  Stage 3: runtime image that serves both (static + API on port 4000)
+#  Stage 1 (ui-builder):     install deps + build React web UI
+#  Stage 2 (server-builder): install deps + compile TypeScript backend
+#  Stage 3 (runtime):        minimal Node.js image that runs the server
 # ──────────────────────────────────────────────────────────────────────────────
 
-# ── 1. Build web UI ────────────────────────────────────────────────────────────
-FROM node:20-slim AS ui-builder
+# Pin exact digest so the image never changes under us unexpectedly.
+# Update by running: docker pull node:20-slim && docker inspect node:20-slim | grep Id
+FROM node:20-slim AS base
+# Disable npm update notifications inside Docker
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_FUND=false
+
+# ── Stage 1: Build React web UI ───────────────────────────────────────────────
+FROM base AS ui-builder
 
 WORKDIR /build/web-ui
-COPY web-ui/package*.json ./
-RUN npm install --ignore-scripts
 
+# Install deps first (layer-cached until package files change)
+COPY web-ui/package.json web-ui/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+# Build
 COPY web-ui/ ./
 RUN npm run build
 
-# ── 2. Build backend server ────────────────────────────────────────────────────
-FROM node:20-slim AS server-builder
+# ── Stage 2: Build backend server ─────────────────────────────────────────────
+FROM base AS server-builder
 
 WORKDIR /build/server
-COPY packages/server/package*.json ./
-RUN npm install --ignore-scripts
+
+COPY packages/server/package.json packages/server/package-lock.json ./
+RUN npm ci --ignore-scripts
 
 COPY packages/server/ ./
 RUN npx tsc --project tsconfig.json
 
-# ── 3. Runtime ─────────────────────────────────────────────────────────────────
+# ── Stage 3: Runtime ──────────────────────────────────────────────────────────
 FROM node:20-slim AS runtime
 
-ARG APP_VERSION=0.6.0
 ENV NODE_ENV=production \
     SERVER_PORT=4000 \
     GAMES_DIR=/data/games \
-    NPM_CONFIG_PREFIX=/usr/local/share/npm-global \
-    PATH="/usr/local/share/npm-global/bin:$PATH"
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_FUND=false
 
-# Install runtime tools + opengame CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 curl git ca-certificates \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /usr/local/share/npm-global
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy built artefacts
 WORKDIR /app
 
+# Copy compiled server + its production node_modules
 COPY --from=server-builder /build/server/dist         ./dist
 COPY --from=server-builder /build/server/node_modules ./node_modules
 COPY --from=server-builder /build/server/package.json ./package.json
 
-# Web UI static files – served by the backend
+# Web UI static files served by the backend at /
 COPY --from=ui-builder /build/web-ui/dist ./web-ui/dist
 
-# Games data volume
 VOLUME ["/data/games"]
+VOLUME ["/data/installers"]
 
 EXPOSE 4000
 

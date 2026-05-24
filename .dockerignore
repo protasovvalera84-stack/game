@@ -1,0 +1,68 @@
+# ── Dependency directories ────────────────────────────────────────────────────
+# Excluding node_modules prevents sending GBs of installed packages to the
+# Docker build context. Docker installs fresh inside each image stage.
+node_modules
+**/node_modules
+.npm
+
+# ── Build outputs (will be rebuilt inside Docker) ─────────────────────────────
+dist
+**/dist
+build
+**/build
+release
+**/release
+*.tgz
+*.AppImage
+*.deb
+*.exe
+*.dmg
+
+# ── Test / dev artefacts ──────────────────────────────────────────────────────
+coverage
+**/.nyc_output
+**/.vitest
+
+# ── Installed Python envs ─────────────────────────────────────────────────────
+.venv
+**/.venv
+__pycache__
+**/__pycache__
+*.pyc
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Editor / OS noise ─────────────────────────────────────────────────────────
+.vscode
+.idea
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── Secrets (never send to Docker daemon) ─────────────────────────────────────
+.env
+.env.*
+!.env.docker
+
+# ── Local installers volume (runtime, not needed in image) ───────────────────
+.opengame
+
+# ── Docs (not needed at runtime) ──────────────────────────────────────────────
+docs
+docs-site
+*.md
+!README.md
+
+# ── Large test / demo assets ──────────────────────────────────────────────────
+assets/downloads
+agent-test
+integration-tests
+
+# ── Vendored binaries (Electron downloads them fresh) ─────────────────────────
+packages/core/vendor
