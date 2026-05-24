@@ -152,14 +152,68 @@ function CategorySection({
 
 // ── Connection tester ─────────────────────────────────────────────────────────
 type TestState = 'idle' | 'testing' | 'ok' | 'error';
+type ErrorKind = 'balance' | 'auth' | 'model' | 'rate_limit' | 'network' | 'other';
+
+interface TestResult {
+  state: TestState;
+  message: string;
+  errorKind?: ErrorKind;
+  hint?: string;
+  hintUrl?: string;
+}
+
+/** Map HTTP status + body to a human-readable message with actionable hint. */
+function interpretError(status: number, body: string): { message: string; kind: ErrorKind; hint: string; hintUrl?: string } {
+  const b = body.toLowerCase();
+
+  if (status === 402 || b.includes('insufficient') || b.includes('balance') || b.includes('quota_exceeded')) {
+    return {
+      kind: 'balance',
+      message: 'Недостаточно баланса на аккаунте провайдера.',
+      hint: 'Пополните баланс в личном кабинете или переключитесь на бесплатный провайдер (Groq, Gemini, Ollama).',
+      hintUrl: undefined,
+    };
+  }
+  if (status === 401 || b.includes('unauthorized') || b.includes('invalid api key') || b.includes('authentication')) {
+    return {
+      kind: 'auth',
+      message: 'Неверный API ключ.',
+      hint: 'Проверьте ключ в личном кабинете провайдера. Убедитесь, что скопировали его полностью без пробелов.',
+    };
+  }
+  if (status === 404 || b.includes('model not found') || b.includes('no such model')) {
+    return {
+      kind: 'model',
+      message: 'Модель не найдена.',
+      hint: 'Выберите другую модель из списка или введите точное название из документации провайдера.',
+    };
+  }
+  if (status === 429 || b.includes('rate limit') || b.includes('too many requests')) {
+    return {
+      kind: 'rate_limit',
+      message: 'Слишком много запросов (rate limit).',
+      hint: 'Подождите минуту и попробуйте снова. Или обновитесь до платного тарифа.',
+    };
+  }
+  if (status === 0 || b.includes('failed to fetch') || b.includes('network')) {
+    return {
+      kind: 'network',
+      message: 'Нет соединения с сервером.',
+      hint: 'Проверьте URL провайдера. Для локальных провайдеров (Ollama) убедитесь, что он запущен.',
+    };
+  }
+  return {
+    kind: 'other',
+    message: `Ошибка ${status}: ${body.slice(0, 100)}`,
+    hint: 'Проверьте настройки и попробуйте снова.',
+  };
+}
 
 function useConnectionTest() {
-  const [state, setState] = useState<TestState>('idle');
-  const [message, setMessage] = useState('');
+  const [result, setResult] = useState<TestResult>({ state: 'idle', message: '' });
 
   const test = useCallback(async (baseUrl: string, apiKey: string, model: string) => {
-    setState('testing');
-    setMessage('');
+    setResult({ state: 'testing', message: '' });
     try {
       const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
       const res = await fetch(url, {
@@ -176,21 +230,25 @@ function useConnectionTest() {
         }),
         signal: AbortSignal.timeout(15_000),
       });
+
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 120)}`);
+        const { message, kind, hint, hintUrl } = interpretError(res.status, text);
+        setResult({ state: 'error', message, errorKind: kind, hint, hintUrl });
+        return;
       }
+
       const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       const reply = data.choices?.[0]?.message?.content ?? '(no content)';
-      setState('ok');
-      setMessage(`✓ Connected — model replied: "${reply.slice(0, 60)}"`);
+      setResult({ state: 'ok', message: `Подключено — модель ответила: "${reply.slice(0, 60)}"` });
     } catch (err: unknown) {
-      setState('error');
-      setMessage(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      const { message, kind, hint } = interpretError(0, msg);
+      setResult({ state: 'error', message, errorKind: kind, hint });
     }
   }, []);
 
-  return { state, message, test };
+  return { ...result, test };
 }
 
 // ── Model selector (with optional custom input) ───────────────────────────────
@@ -373,7 +431,7 @@ export default function Settings({ navigate }: Props) {
   const [imgModel,      setImgModel]      = useState(() => load(KEYS.imgModel));
 
   const [saved, setSaved] = useState(false);
-  const { state: testState, message: testMsg, test } = useConnectionTest();
+  const { state: testState, message: testMsg, hint: testHint, errorKind: testErrorKind, test } = useConnectionTest();
 
   // When user picks a provider preset, auto-fill baseUrl + default model
   const selectProvider = useCallback((id: string) => {
@@ -539,32 +597,69 @@ export default function Settings({ navigate }: Props) {
               </label>
 
               {/* Test connection */}
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  className="btn-ghost flex items-center gap-2 text-xs py-2 px-4"
-                  disabled={testState === 'testing'}
-                  onClick={() =>
-                    void test(effectiveBaseUrl, apiKey, model || getDefaultModel(activeProvider))
-                  }
-                >
-                  {testState === 'testing' ? (
-                    <Loader size={12} className="animate-spin" />
-                  ) : (
-                    <TestTube size={12} />
-                  )}
-                  {testState === 'testing' ? 'Testing…' : 'Test connection'}
-                </button>
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-3">
+                  <button
+                    className="btn-ghost flex items-center gap-2 text-xs py-2 px-4"
+                    disabled={testState === 'testing'}
+                    onClick={() =>
+                      void test(effectiveBaseUrl, apiKey, model || getDefaultModel(activeProvider))
+                    }
+                  >
+                    {testState === 'testing' ? (
+                      <Loader size={12} className="animate-spin" />
+                    ) : (
+                      <TestTube size={12} />
+                    )}
+                    {testState === 'testing' ? 'Проверяю…' : 'Проверить соединение'}
+                  </button>
 
+                  <AnimatePresence>
+                    {testMsg && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        className={`text-xs font-medium ${testState === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}
+                      >
+                        {testState === 'ok' ? '✓' : '✗'} {testMsg}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Hint block — shown on error */}
                 <AnimatePresence>
-                  {testMsg && (
-                    <motion.span
-                      initial={{ opacity: 0, x: -6 }}
-                      animate={{ opacity: 1, x: 0 }}
+                  {testState === 'error' && testHint && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className={`text-xs ${testState === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}
+                      className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 space-y-2"
                     >
-                      {testMsg}
-                    </motion.span>
+                      <p className="text-xs text-amber-300">{testHint}</p>
+
+                      {/* Suggest free providers when balance/auth error */}
+                      {(testErrorKind === 'balance' || testErrorKind === 'auth') && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <span className="text-[10px] text-white/30">Бесплатные альтернативы:</span>
+                          {(['ollama', 'groq', 'google'] as const).map((id) => {
+                            const p = getProvider(id);
+                            if (!p) return null;
+                            return (
+                              <button
+                                key={id}
+                                className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg glass hover:bg-white/10 transition-colors"
+                                onClick={() => selectProvider(id)}
+                              >
+                                <span>{p.emoji}</span>
+                                <span className={p.color}>{p.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </motion.div>
                   )}
                 </AnimatePresence>
               </div>
