@@ -6,6 +6,7 @@
  *  - REST   /api/generate     – kick off a new generation (SSE stream)
  *  - REST   /api/games/:id    – get game metadata
  *  - REST   /api/games/:id/delete – delete a game
+ *  - REST   /api/downloads    – list + serve pre-built Electron installers
  *  - WS     socket.io         – real-time generation progress
  *  - Static /games/:id        – serve the generated game HTML
  */
@@ -20,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server as SocketIOServer } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
+import { createDownloadsRouter } from './downloads.js';
 import { generateGame } from './generate.js';
 import { GameRecord, listGames, loadGame, saveGame, deleteGame } from './store.js';
 
@@ -27,6 +29,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = parseInt(process.env.SERVER_PORT ?? '4000', 10);
 const GAMES_DIR = process.env.GAMES_DIR ?? path.join(os.homedir(), '.opengame', 'games');
+const INSTALLERS_DIR =
+  process.env.INSTALLERS_DIR ?? path.join(os.homedir(), '.opengame', 'installers');
 
 await fs.ensureDir(GAMES_DIR);
 
@@ -53,7 +57,7 @@ app.use('/games', express.static(GAMES_DIR));
 
 // ── REST: health ──────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', version: '0.6.0', gamesDir: GAMES_DIR });
+  res.json({ status: 'ok', version: '0.6.0', gamesDir: GAMES_DIR, installersDir: INSTALLERS_DIR });
 });
 
 // ── REST: list games ──────────────────────────────────────────────────────
@@ -139,6 +143,9 @@ app.post('/api/generate', async (req, res) => {
     },
   }).catch(console.error);
 });
+
+// ── REST: downloads (pre-built installers) ────────────────────────────────
+app.use('/api/downloads', createDownloadsRouter(INSTALLERS_DIR));
 
 // ── Socket.io: join generation room ───────────────────────────────────────
 io.on('connection', (socket) => {

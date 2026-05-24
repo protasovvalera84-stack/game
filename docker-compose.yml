@@ -2,17 +2,20 @@
 # OpenGame Studio — Docker Compose
 #
 # Starts the full stack OFFLINE — no cloud required:
-#   • ollama:    local LLM backend  (http://localhost:11434)
-#   • opengame:  web UI + API       (http://localhost:4000)
+#   • ollama:             local LLM backend  (http://localhost:11434)
+#   • ollama-pull:        downloads the model on first run (runs once)
+#   • installer-builder:  builds Electron desktop installers (runs once)
+#   • opengame:           web UI + API       (http://localhost:4000)
 #
 # Quick start:
+#   cp .env.docker .env   # customise model / port if needed
 #   docker compose up -d
 #   # wait for the model pull on first run (~4 GB):
-#   docker compose logs -f ollama
+#   docker compose logs -f ollama-pull
 #   # then open http://localhost:4000
 #
-# To use a GPU (NVIDIA):
-#   uncomment the `deploy.resources` block under the ollama service
+# To use a GPU (NVIDIA): uncomment the `deploy.resources` block below.
+# To rebuild installers: docker compose run --rm installer-builder
 ###############################################################################
 
 name: opengame
@@ -63,6 +66,22 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
 
+  # ── Installer builder: compiles Electron desktop apps (runs once) ──────────
+  #    Produces:  Linux .AppImage + .deb  (always)
+  #               Windows .exe           (if Wine is available in the image)
+  #    Output is stored in the `installers` volume and served by opengame
+  #    at GET /api/downloads — the web UI shows "Download" buttons automatically.
+  installer-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    container_name: opengame-installer-builder
+    restart: "no"          # runs once; idempotent — skips if already built
+    volumes:
+      - installers-data:/data/installers
+    environment:
+      - OUTPUT_DIR=/data/installers
+
   # ── OpenGame: web UI + API server ──────────────────────────────────────────
   opengame:
     build:
@@ -77,6 +96,7 @@ services:
       - "${APP_PORT:-4000}:4000"
     volumes:
       - games-data:/data/games
+      - installers-data:/data/installers:ro   # serve pre-built installers
     environment:
       # LLM — routes to local Ollama
       - OPENAI_BASE_URL=http://ollama:11434/v1
@@ -89,6 +109,7 @@ services:
       # Server config
       - SERVER_PORT=4000
       - GAMES_DIR=/data/games
+      - INSTALLERS_DIR=/data/installers
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
@@ -101,4 +122,6 @@ volumes:
   ollama-data:
     driver: local
   games-data:
+    driver: local
+  installers-data:
     driver: local

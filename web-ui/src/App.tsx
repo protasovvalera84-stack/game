@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import Layout from './components/Layout.js';
+import Downloads from './pages/Downloads.js';
 import Gallery from './pages/Gallery.js';
 import GameView from './pages/GameView.js';
 import Generate from './pages/Generate.js';
@@ -12,6 +13,7 @@ export type Page =
   | { name: 'gallery' }
   | { name: 'generate'; prompt?: string }
   | { name: 'game'; id: string }
+  | { name: 'downloads' }
   | { name: 'settings' };
 
 const pageVariants = {
@@ -35,6 +37,8 @@ export default function App() {
         return <Generate navigate={navigate} initialPrompt={page.prompt} />;
       case 'game':
         return <GameView id={page.id} navigate={navigate} />;
+      case 'downloads':
+        return <Downloads navigate={navigate} />;
       case 'settings':
         return <Settings navigate={navigate} />;
     }

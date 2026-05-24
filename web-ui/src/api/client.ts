@@ -14,6 +14,27 @@ export interface GameRecord {
   thumbnail?: string;
 }
 
+export interface InstallerFile {
+  filename: string;
+  platform: 'windows' | 'linux' | 'android' | 'source';
+  ext: string;
+  arch: string;
+  size: number;
+  sizeHuman: string;
+  url: string;
+  label: string;
+  description: string;
+}
+
+export interface DownloadsResponse {
+  files: InstallerFile[];
+  buildStatus: {
+    builtAt?: string;
+    log?: string;
+    building?: boolean;
+  };
+}
+
 export interface GenerateRequest {
   prompt: string;
   model?: string;
@@ -45,6 +66,8 @@ async function request<T>(
 
 export const api = {
   health: () => request<{ status: string; version: string }>('GET', '/health'),
+
+  downloads: () => request<DownloadsResponse>('GET', '/downloads'),
 
   listGames: () => request<GameRecord[]>('GET', '/games'),
 

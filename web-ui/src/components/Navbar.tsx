@@ -1,4 +1,4 @@
-import { Gamepad2, Images, Plus, Settings, Zap } from 'lucide-react';
+import { Download, Gamepad2, Images, Plus, Settings, Zap } from 'lucide-react';
 import React from 'react';
 import type { Page } from '../App.js';
 
@@ -8,9 +8,10 @@ interface Props {
 }
 
 const navItems: { label: string; icon: React.ReactNode; page: Page }[] = [
-  { label: 'Home',     icon: <Zap size={16} />,      page: { name: 'home' } },
-  { label: 'Gallery',  icon: <Images size={16} />,    page: { name: 'gallery' } },
-  { label: 'Settings', icon: <Settings size={16} />,  page: { name: 'settings' } },
+  { label: 'Home',      icon: <Zap size={16} />,       page: { name: 'home' } },
+  { label: 'Gallery',   icon: <Images size={16} />,     page: { name: 'gallery' } },
+  { label: 'Download',  icon: <Download size={16} />,   page: { name: 'downloads' } },
+  { label: 'Settings',  icon: <Settings size={16} />,   page: { name: 'settings' } },
 ];
 
 export default function Navbar({ page, navigate }: Props) {
