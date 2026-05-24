@@ -11,7 +11,7 @@ FROM node:20-slim AS ui-builder
 
 WORKDIR /build/web-ui
 COPY web-ui/package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 
 COPY web-ui/ ./
 RUN npm run build
@@ -21,7 +21,7 @@ FROM node:20-slim AS server-builder
 
 WORKDIR /build/server
 COPY packages/server/package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 
 COPY packages/server/ ./
 RUN npx tsc --project tsconfig.json
