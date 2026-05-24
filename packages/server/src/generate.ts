@@ -91,10 +91,15 @@ export async function generateGame(opts: GenerateOptions): Promise<void> {
     OPENGAME_OUTPUT_DIR: gameDir,
   };
 
+  // opengame CLI flags (see packages/cli/src/config/config.ts):
+  //   --prompt / -p   : non-interactive prompt
+  //   --yolo          : auto-approve ALL tool calls (equivalent to --approval-mode=yolo)
+  //   --no-sandbox    : disable sandbox (we are already inside Docker)
+  // Output goes to cwd (gameDir) — the CLI does not have --output-dir flag.
   const args = [
     '--prompt', prompt,
-    '--output-dir', gameDir,
-    '--yes',
+    '--yolo',
+    '--no-sandbox',
   ];
 
   const providerLabel = baseUrl
