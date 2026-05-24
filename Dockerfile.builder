@@ -33,8 +33,8 @@ COPY web-ui/package*.json          ./web-ui/
 COPY electron/package*.json        ./electron/
 
 # Install deps for both packages
-RUN cd web-ui   && npm ci --ignore-scripts
-RUN cd electron && npm ci --ignore-scripts
+RUN cd web-ui   && npm install --ignore-scripts
+RUN cd electron && npm install --ignore-scripts
 
 # Now copy source code
 COPY web-ui/     ./web-ui/
