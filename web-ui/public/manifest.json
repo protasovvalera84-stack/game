@@ -1,0 +1,41 @@
+{
+  "name": "OpenGame Studio",
+  "short_name": "OpenGame",
+  "description": "AI-powered web game creation from a single prompt — runs offline",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "theme_color": "#0d0d14",
+  "background_color": "#0d0d14",
+  "lang": "en",
+  "categories": ["games", "productivity", "developer tools"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "New Game",
+      "short_name": "Generate",
+      "description": "Start creating a new game",
+      "url": "/?action=generate",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "My Games",
+      "short_name": "Gallery",
+      "description": "Browse generated games",
+      "url": "/?page=gallery",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
