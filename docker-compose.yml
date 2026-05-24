@@ -1,0 +1,104 @@
+###############################################################################
+# OpenGame Studio — Docker Compose
+#
+# Starts the full stack OFFLINE — no cloud required:
+#   • ollama:    local LLM backend  (http://localhost:11434)
+#   • opengame:  web UI + API       (http://localhost:4000)
+#
+# Quick start:
+#   docker compose up -d
+#   # wait for the model pull on first run (~4 GB):
+#   docker compose logs -f ollama
+#   # then open http://localhost:4000
+#
+# To use a GPU (NVIDIA):
+#   uncomment the `deploy.resources` block under the ollama service
+###############################################################################
+
+name: opengame
+
+services:
+  # ── Ollama: local LLM ───────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: opengame-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # ── GPU support (NVIDIA) — uncomment to enable ──────────────────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    environment:
+      - OLLAMA_ORIGINS=*
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+
+  # ── Model puller: downloads the default model on first run ─────────────────
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: opengame-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: >
+      sh -c "
+        echo '[pull] Downloading model: ${OPENGAME_MODEL:-qwen2.5-coder:7b} ...';
+        ollama pull ${OPENGAME_MODEL:-qwen2.5-coder:7b};
+        echo '[pull] Done.';
+      "
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+
+  # ── OpenGame: web UI + API server ──────────────────────────────────────────
+  opengame:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: opengame-app
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    volumes:
+      - games-data:/data/games
+    environment:
+      # LLM — routes to local Ollama
+      - OPENAI_BASE_URL=http://ollama:11434/v1
+      - OPENAI_API_KEY=ollama          # Ollama ignores this but some clients require it
+      - OPENAI_MODEL=${OPENGAME_MODEL:-qwen2.5-coder:7b}
+      # Image generation (optional — leave blank to disable)
+      - OPENGAME_IMAGE_PROVIDER=${OPENGAME_IMAGE_PROVIDER:-}
+      - OPENGAME_IMAGE_API_KEY=${OPENGAME_IMAGE_API_KEY:-}
+      - OPENGAME_IMAGE_MODEL=${OPENGAME_IMAGE_MODEL:-}
+      # Server config
+      - SERVER_PORT=4000
+      - GAMES_DIR=/data/games
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  ollama-data:
+    driver: local
+  games-data:
+    driver: local
